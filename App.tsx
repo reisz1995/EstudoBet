@@ -15,8 +15,8 @@ function App() {
     league: '',
     homeTeam: '',
     awayTeam: '',
-    homeTeamLogo: '',
-    awayTeamLogo: '',
+    homeTeamLogo: '', // Inicializa vazio
+    awayTeamLogo: '', // Inicializa vazio
     date: new Date().toISOString().substring(0, 16)
   };
 

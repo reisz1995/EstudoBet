@@ -9,8 +9,8 @@ export interface StudySession {
   league: string;
   homeTeam: string;
   awayTeam: string;
-  homeTeamLogo?: string; // Novo campo
-  awayTeamLogo?: string; // Novo campo
+  homeTeamLogo?: string; // Novo campo para URL do logo da casa
+  awayTeamLogo?: string; // Novo campo para URL do logo visitante
   date: string;
 }
 

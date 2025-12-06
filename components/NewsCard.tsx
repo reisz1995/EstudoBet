@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { NewsNote } from '../types';
 import { Newspaper, Plus, Trash2, Globe, Share2, Check } from 'lucide-react';
@@ -100,7 +99,9 @@ const NewsPanel: React.FC<NewsPanelProps> = ({ news, setNews }) => {
 
                   {/* AI Indicator */}
                   {item.isAiGenerated && (
-                    <Globe size={12} className="text-emerald-500/70 mt-auto" title="Gerado por IA" />
+                    <div title="Gerado por IA" className="mt-auto">
+                      <Globe size={12} className="text-emerald-500/70" />
+                    </div>
                   )}
                 </div>
               </div>

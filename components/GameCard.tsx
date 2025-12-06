@@ -22,7 +22,7 @@ const TeamLogoAvatar: React.FC<{
     const newUrl = prompt(`Insira a URL do logo para ${name || 'o time'}:`, url || '');
     if (newUrl !== null) {
       onChangeUrl(newUrl);
-      setImgError(false);
+      setImgError(false); // Reset error state on new input
     }
   };
 
@@ -64,6 +64,7 @@ const MatchPanel: React.FC<MatchPanelProps> = ({ session, setSession, onAutoGene
     setSession(prev => ({ ...prev, [field]: value }));
   };
 
+  // Funções auxiliares para dividir Data e Hora
   const handleDatePartChange = (datePart: string) => {
     // session.date formato esperado: YYYY-MM-DDTHH:mm
     const currentTime = session.date.split('T')[1] || '00:00';
