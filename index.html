@@ -7,6 +7,9 @@
     <title>BetMaster Analytics</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" crossorigin="anonymous">
+    <!-- Babel para compilar JSX no navegador -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
     <script>
       tailwind.config = {
         theme: {
@@ -21,7 +24,7 @@
                 950: '#020617',
               },
               emerald: {
-                450: '#10B981', // Custom accent
+                450: '#10B981',
               }
             }
           },
@@ -33,7 +36,6 @@
         background-color: #020617;
         color: #e2e8f0;
       }
-      /* Custom scrollbar for webkit */
       ::-webkit-scrollbar {
         width: 8px;
       }
@@ -47,21 +49,936 @@
       ::-webkit-scrollbar-thumb:hover {
         background: #475569; 
       }
+      .animate-in { animation-duration: 200ms; animation-fill-mode: both; }
+      .fade-in { animation-name: fadeIn; }
+      .zoom-in-95 { --tw-enter-scale: 0.95; }
+      .slide-in-from-top-2 { --tw-enter-translate-y: -0.5rem; }
+      
+      @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     </style>
   <script type="importmap">
-{
-  "imports": {
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "html2canvas": "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.esm.js"
+  {
+    "imports": {
+      "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
+      "react": "https://aistudiocdn.com/react@^19.2.0",
+      "react-dom/client": "https://aistudiocdn.com/react-dom@^19.2.0/client",
+      "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+      "html2canvas": "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.esm.js"
+    }
   }
-}
-</script>
+  </script>
 </head>
   <body>
     <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+      import React, { useState, useEffect, useRef } from 'react';
+      import ReactDOM from 'react-dom/client';
+      import { 
+        Layout, Save, CheckCircle, RotateCcw, Archive, History, 
+        Image as ImageIcon, Download, Trophy, Calendar, Sparkles, 
+        Eraser, ImagePlus, Shield, Clock, Newspaper, Plus, 
+        Trash2, Globe, Share2, Check, Target, TrendingUp, 
+        Pencil, X, Upload, Eye, ChevronUp, ChevronDown 
+      } from 'lucide-react';
+      import html2canvas from 'html2canvas';
+      import { GoogleGenAI } from "@google/genai";
+
+      // --- TYPES & CONSTANTS ---
+      const SportType = {
+        FOOTBALL: 'Futebol',
+        BASKETBALL: 'Basquete'
+      };
+
+      // --- SERVICE: GEMINI ---
+      const ai = new GoogleGenAI({ apiKey: "AIzaSyAhlg80uDSuxNpWGCjaodfet-fTsMd9PGc" });
+
+      const generateStudyData = async (sport, homeTeam, awayTeam, league) => {
+        try {
+          const model = 'gemini-2.5-flash';
+          const prompt = `
+            Atue como um analista de apostas profissional.
+            Gere um estudo inicial para o jogo: ${homeTeam} vs ${awayTeam} (${league} - ${sport}).
+            
+            TAREFAS:
+            1. Use o Google Search para encontrar notícias de última hora (lesões, suspensões, declarações, momento dos times) de HOJE ou ONTEM.
+            2. Tente encontrar a URL de uma imagem (logo/escudo) PNG transparente ou JPG para o ${homeTeam} e para o ${awayTeam}. Preferência por links da Wikimedia ou sites oficiais estáveis.
+            3. Sugira 2 a 3 mercados com valor esperado positivo baseados na forma recente e nas notícias encontradas.
+
+            FORMATO DE RESPOSTA OBRIGATÓRIO:
+            Retorne sua resposta APENAS como um JSON válido, sem blocos de código markdown (como \`\`\`json), seguindo estritamente esta estrutura:
+            {
+              "homeTeamLogo": "URL encontrada ou null",
+              "awayTeamLogo": "URL encontrada ou null",
+              "news": [
+                "Fato relevante encontrado na busca 1",
+                "Fato relevante encontrado na busca 2"
+              ],
+              "bets": [
+                { 
+                  "market": "Nome do mercado (ex: Casa Vence)", 
+                  "odds": 1.90, 
+                  "reasoning": "Justificativa curta (max 10 palavras)" 
+                }
+              ]
+            }
+          `;
+
+          const response = await ai.models.generateContent({
+            model,
+            contents: prompt,
+            config: {
+              tools: [{ googleSearch: {} }],
+              systemInstruction: "Você é um assistente de 'Value Betting'. Seja crítico. Retorne estritamente JSON.",
+            }
+          });
+
+          if (response.text) {
+            let jsonString = response.text.trim();
+            if (jsonString.startsWith('```')) {
+                jsonString = jsonString.replace(/^```(json)?/, '').replace(/```$/, '').trim();
+            }
+            try {
+              return JSON.parse(jsonString);
+            } catch (e) {
+              const match = jsonString.match(/\{[\s\S]*\}/);
+              if (match) {
+                try { return JSON.parse(match[0]); } catch (e2) { return null; }
+              }
+              return null;
+            }
+          }
+          return null;
+        } catch (error) {
+          console.error("Erro ao gerar estudo:", error);
+          throw error;
+        }
+      };
+
+      // --- COMPONENT: TEAM LOGO AVATAR ---
+      const TeamLogoAvatar = ({ name, url, onChangeUrl }) => {
+        const [imgError, setImgError] = useState(false);
+
+        const handlePrompt = () => {
+          const newUrl = prompt(`Insira a URL do logo para ${name || 'o time'}:`, url || '');
+          if (newUrl !== null) {
+            onChangeUrl(newUrl);
+            setImgError(false);
+          }
+        };
+
+        const initials = name
+          ? name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+          : '?';
+
+        return (
+          <div 
+            onClick={handlePrompt}
+            className="relative group cursor-pointer flex-shrink-0"
+            title="Clique para alterar o logo"
+          >
+            <div className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-slate-800 border-2 border-slate-600 flex items-center justify-center overflow-hidden transition-all group-hover:border-emerald-500 shadow-lg">
+              {url && !imgError ? (
+                <img 
+                  src={url} 
+                  alt={name} 
+                  className="w-full h-full object-cover" 
+                  onError={() => setImgError(true)}
+                  crossOrigin="anonymous" 
+                />
+              ) : (
+                <span className="text-xl md:text-2xl font-bold text-slate-500 group-hover:text-emerald-500 transition-colors">
+                  {initials}
+                </span>
+              )}
+            </div>
+            <div className="absolute -bottom-1 -right-1 bg-slate-700 p-1 rounded-full border border-slate-600 group-hover:bg-emerald-500 group-hover:text-white transition-colors">
+              {url && !imgError ? <Shield size={12} /> : <ImagePlus size={12} />}
+            </div>
+          </div>
+        );
+      };
+
+      // --- COMPONENT: MATCH PANEL ---
+      const MatchPanel = ({ session, setSession, onAutoGenerate, isGenerating }) => {
+        const handleChange = (field, value) => {
+          setSession(prev => ({ ...prev, [field]: value }));
+        };
+
+        const handleDatePartChange = (datePart) => {
+          const currentTime = session.date.split('T')[1] || '00:00';
+          handleChange('date', `${datePart}T${currentTime}`);
+        };
+
+        const handleTimePartChange = (timePart) => {
+          const currentDate = session.date.split('T')[0] || new Date().toISOString().split('T')[0];
+          handleChange('date', `${currentDate}T${timePart}`);
+        };
+
+        const handleLocalClear = () => {
+          if (session.homeTeam || session.awayTeam || session.league) {
+              if (window.confirm('Deseja limpar os campos deste jogo?')) {
+                  setSession(prev => ({ 
+                    ...prev, 
+                    league: '', 
+                    homeTeam: '', 
+                    awayTeam: '',
+                    homeTeamLogo: '',
+                    awayTeamLogo: '' 
+                  }));
+              }
+          }
+        };
+
+        const hasData = !!(session.homeTeam || session.awayTeam || session.league);
+        const currentDateValue = session.date.split('T')[0];
+        const currentTimeValue = session.date.split('T')[1] || '00:00';
+
+        return (
+          <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 h-full flex flex-col shadow-xl">
+            <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-2">
+                <Trophy className="text-emerald-500" size={20} />
+                <h2 className="text-lg font-bold text-white">1. Configuração do Jogo</h2>
+              </div>
+              <button 
+                onClick={handleLocalClear}
+                disabled={!hasData}
+                className={`transition-colors p-1.5 rounded-lg ${
+                  !hasData 
+                  ? 'text-slate-700 cursor-not-allowed' 
+                  : 'text-slate-500 hover:text-white hover:bg-slate-800'
+                }`}
+                title="Limpar campos"
+              >
+                <Eraser size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-4 flex-1">
+              <div className="flex bg-slate-800 p-1 rounded-lg">
+                <button
+                  onClick={() => handleChange('sport', SportType.FOOTBALL)}
+                  className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${
+                    session.sport === SportType.FOOTBALL ? 'bg-slate-700 text-emerald-400 shadow' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Futebol
+                </button>
+                <button
+                  onClick={() => handleChange('sport', SportType.BASKETBALL)}
+                  className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${
+                    session.sport === SportType.BASKETBALL ? 'bg-slate-700 text-orange-400 shadow' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Basquete
+                </button>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-500 font-medium uppercase ml-1">Campeonato / Liga</label>
+                <input
+                  type="text"
+                  value={session.league}
+                  onChange={(e) => handleChange('league', e.target.value)}
+                  placeholder="Ex: Premier League, NBA..."
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
+                />
+              </div>
+
+              <div className="flex flex-col gap-4">
+                <label className="text-xs text-slate-500 font-medium uppercase ml-1 -mb-2">Confronto</label>
+                <div className="flex items-center gap-3">
+                  <TeamLogoAvatar 
+                    name={session.homeTeam} 
+                    url={session.homeTeamLogo} 
+                    onChangeUrl={(url) => handleChange('homeTeamLogo', url)}
+                  />
+                  <div className="flex-1">
+                    <input
+                      type="text"
+                      value={session.homeTeam}
+                      onChange={(e) => handleChange('homeTeam', e.target.value)}
+                      placeholder="Time da Casa"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-all font-semibold text-lg"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-center -my-2 opacity-50">
+                  <span className="text-xs font-bold text-slate-500">VS</span>
+                </div>
+
+                <div className="flex items-center gap-3 flex-row-reverse md:flex-row">
+                  <div className="flex-1">
+                    <input
+                      type="text"
+                      value={session.awayTeam}
+                      onChange={(e) => handleChange('awayTeam', e.target.value)}
+                      placeholder="Time Visitante"
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-all font-semibold text-lg text-right md:text-left"
+                    />
+                  </div>
+                  <TeamLogoAvatar 
+                    name={session.awayTeam} 
+                    url={session.awayTeamLogo} 
+                    onChangeUrl={(url) => handleChange('awayTeamLogo', url)}
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="text-xs text-slate-500 font-medium uppercase ml-1">Data</label>
+                  <div className="relative">
+                    <Calendar className="absolute left-3 top-3 text-slate-500 pointer-events-none" size={16} />
+                    <input
+                      type="date"
+                      value={currentDateValue}
+                      onChange={(e) => handleDatePartChange(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-3 text-white focus:outline-none focus:border-emerald-500 transition-all [color-scheme:dark]"
+                    />
+                  </div>
+                </div>
+                
+                <div className="w-1/3 min-w-[120px]">
+                  <label className="text-xs text-slate-500 font-medium uppercase ml-1">Horário</label>
+                  <div className="relative">
+                    <Clock className="absolute left-3 top-3 text-slate-500 pointer-events-none" size={16} />
+                    <input
+                      type="time"
+                      value={currentTimeValue}
+                      onChange={(e) => handleTimePartChange(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-3 text-white focus:outline-none focus:border-emerald-500 transition-all [color-scheme:dark]"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-auto pt-4 border-t border-slate-800">
+              <button
+                onClick={onAutoGenerate}
+                disabled={isGenerating || !session.homeTeam || !session.awayTeam}
+                className="w-full relative group overflow-hidden bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-lg py-3 px-4 shadow-lg shadow-emerald-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                <div className="relative z-10 flex items-center justify-center gap-2">
+                  {isGenerating ? (
+                    <>
+                      <div className="animate-spin h-5 w-5 border-2 border-white/30 border-t-white rounded-full"></div>
+                      <span>Analisando e Buscando Logos...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={18} className="text-yellow-300" />
+                      <span>Gerar Estudo com IA</span>
+                    </>
+                  )}
+                </div>
+              </button>
+            </div>
+          </div>
+        );
+      };
+
+      // --- COMPONENT: NEWS PANEL ---
+      const NewsPanel = ({ news, setNews }) => {
+        const [newNote, setNewNote] = useState('');
+        const [copiedId, setCopiedId] = useState(null);
+
+        const addNote = () => {
+          if (!newNote.trim()) return;
+          setNews(prev => [...prev, { id: Date.now().toString(), text: newNote, isAiGenerated: false }]);
+          setNewNote('');
+        };
+
+        const removeNote = (id) => {
+          setNews(prev => prev.filter(n => n.id !== id));
+        };
+
+        const clearAllNews = () => {
+          if (news.length > 0 && window.confirm('Deseja limpar todas as notícias?')) {
+            setNews([]);
+          }
+        };
+
+        const handleShare = (id, text) => {
+          navigator.clipboard.writeText(text).then(() => {
+            setCopiedId(id);
+            setTimeout(() => setCopiedId(null), 2000);
+          }).catch(err => {
+            console.error('Falha ao copiar:', err);
+          });
+        };
+
+        return (
+          <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 h-full flex flex-col shadow-xl">
+            <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-2">
+                <Newspaper className="text-blue-400" size={20} />
+                <h2 className="text-lg font-bold text-white">2. Notícias e Fatos</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                 <span className="text-xs bg-slate-800 px-2 py-1 rounded text-slate-400">{news.length} notas</span>
+                 <button 
+                   onClick={clearAllNews}
+                   disabled={news.length === 0}
+                   className={`transition-colors p-1 rounded ${news.length === 0 ? 'text-slate-700 cursor-not-allowed' : 'text-slate-500 hover:text-red-400 hover:bg-red-500/10'}`}
+                 >
+                   <Trash2 size={16} />
+                 </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-thin scrollbar-thumb-slate-700 mb-4 min-h-[200px]">
+              {news.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-slate-600 border-2 border-dashed border-slate-800 rounded-xl p-6">
+                  <Newspaper size={32} className="mb-2 opacity-50" />
+                  <p className="text-sm text-center">Nenhuma notícia registrada.<br/>Use a IA ou adicione manualmente.</p>
+                </div>
+              ) : (
+                news.map((item) => (
+                  <div key={item.id} className="group bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-blue-500/30 rounded-lg p-3 transition-all">
+                    <div className="flex justify-between gap-3">
+                      <p className="text-sm text-slate-300 leading-relaxed">{item.text}</p>
+                      <div className="flex flex-col gap-2 items-end min-w-[20px]">
+                        <button 
+                          onClick={() => handleShare(item.id, item.text)}
+                          className={`transition-all ${copiedId === item.id ? 'text-emerald-500' : 'text-slate-600 hover:text-white'}`}
+                        >
+                          {copiedId === item.id ? <Check size={14} /> : <Share2 size={14} />}
+                        </button>
+                        <button onClick={() => removeNote(item.id)} className="text-slate-600 hover:text-red-400">
+                          <Trash2 size={14} />
+                        </button>
+                        {item.isAiGenerated && (
+                          <div title="Gerado por IA" className="mt-auto">
+                            <Globe size={12} className="text-emerald-500/70" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="mt-auto space-y-2 bg-slate-800/50 p-3 rounded-lg border border-slate-700">
+              <textarea
+                value={newNote}
+                onChange={(e) => setNewNote(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addNote()}
+                placeholder="Adicionar fato relevante..."
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition-all resize-none h-20"
+              />
+              <button 
+                onClick={addNote}
+                disabled={!newNote.trim()}
+                className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-medium rounded-lg py-2 flex items-center justify-center gap-2 transition-colors text-sm"
+              >
+                <Plus size={16} /> Adicionar Nota
+              </button>
+            </div>
+          </div>
+        );
+      };
+
+      // --- COMPONENT: BETS PANEL ---
+      const BetsPanel = ({ bets, setBets }) => {
+        const [market, setMarket] = useState('');
+        const [odds, setOdds] = useState('');
+        const [editingId, setEditingId] = useState(null);
+        const [editMarket, setEditMarket] = useState('');
+        const [editOdds, setEditOdds] = useState('');
+        const [editReasoning, setEditReasoning] = useState('');
+
+        const addBet = () => {
+          if (!market.trim() || !odds) return;
+          setBets(prev => [...prev, { 
+            id: Date.now().toString(), 
+            market, 
+            odds: parseFloat(odds),
+            reasoning: 'Adicionado manualmente'
+          }]);
+          setMarket('');
+          setOdds('');
+        };
+
+        const removeBet = (id) => {
+          setBets(prev => prev.filter(b => b.id !== id));
+        };
+
+        const clearAllBets = () => {
+          if (bets.length > 0 && window.confirm('Deseja limpar todas as oportunidades?')) {
+            setBets([]);
+          }
+        };
+
+        const startEditing = (bet) => {
+          setEditingId(bet.id);
+          setEditMarket(bet.market);
+          setEditOdds(bet.odds.toString());
+          setEditReasoning(bet.reasoning || '');
+        };
+
+        const saveEdit = (id) => {
+          if (!editMarket.trim() || !editOdds) return;
+          setBets(prev => prev.map(bet => {
+            if (bet.id === id) {
+              return { ...bet, market: editMarket, odds: parseFloat(editOdds), reasoning: editReasoning };
+            }
+            return bet;
+          }));
+          setEditingId(null);
+        };
+
+        const isValidAdd = market.trim() && odds;
+
+        return (
+          <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 h-full flex flex-col shadow-xl">
+            <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-2">
+                <Target className="text-orange-400" size={20} />
+                <h2 className="text-lg font-bold text-white">3. Melhores Oportunidades</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                 <span className="text-xs bg-slate-800 px-2 py-1 rounded text-slate-400">{bets.length} picks</span>
+                 <button 
+                   onClick={clearAllBets}
+                   disabled={bets.length === 0}
+                   className={`transition-colors p-1 rounded ${bets.length === 0 ? 'text-slate-700 cursor-not-allowed' : 'text-slate-500 hover:text-red-400 hover:bg-red-500/10'}`}
+                 >
+                   <Trash2 size={16} />
+                 </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-thin scrollbar-thumb-slate-700 mb-4 min-h-[200px]">
+              {bets.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-slate-600 border-2 border-dashed border-slate-800 rounded-xl p-6">
+                  <Target size={32} className="mb-2 opacity-50" />
+                  <p className="text-sm text-center">Nenhuma aposta selecionada.<br/>Adicione oportunidades com valor.</p>
+                </div>
+              ) : (
+                bets.map((bet) => {
+                  const isEditing = editingId === bet.id;
+                  if (isEditing) {
+                    return (
+                      <div key={bet.id} className="bg-slate-800 border border-orange-500/50 rounded-lg p-3 flex flex-col gap-2 shadow-lg shadow-orange-900/10">
+                        <div className="flex gap-2">
+                          <input 
+                            type="text" 
+                            value={editMarket}
+                            onChange={(e) => setEditMarket(e.target.value)}
+                            className="flex-[2] bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:border-orange-500 outline-none"
+                            placeholder="Mercado"
+                          />
+                          <input 
+                            type="number" 
+                            value={editOdds}
+                            onChange={(e) => setEditOdds(e.target.value)}
+                            className="flex-1 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:border-orange-500 outline-none font-bold text-orange-400"
+                            placeholder="Odd"
+                          />
+                        </div>
+                        <input 
+                            type="text" 
+                            value={editReasoning}
+                            onChange={(e) => setEditReasoning(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs text-slate-300 focus:border-orange-500 outline-none"
+                            placeholder="Justificativa"
+                          />
+                        <div className="flex justify-end gap-2 mt-1">
+                          <button onClick={() => setEditingId(null)} className="p-1 text-slate-400 hover:text-white hover:bg-slate-700 rounded"><X size={16} /></button>
+                          <button onClick={() => saveEdit(bet.id)} className="p-1 text-emerald-400 hover:bg-emerald-500/10 rounded"><Check size={16} /></button>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={bet.id} className="group bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-orange-500/30 rounded-lg p-3 transition-all flex flex-col gap-2">
+                      <div className="flex justify-between items-start">
+                        <div>
+                           <h3 className="text-emerald-400 font-bold text-lg">{bet.odds.toFixed(2)}</h3>
+                           <p className="text-white font-medium text-sm">{bet.market}</p>
+                        </div>
+                        <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => startEditing(bet)} className="p-1.5 text-slate-500 hover:text-blue-400"><Pencil size={14} /></button>
+                          <button onClick={() => removeBet(bet.id)} className="p-1.5 text-slate-500 hover:text-red-400"><Trash2 size={14} /></button>
+                        </div>
+                      </div>
+                      {bet.reasoning && (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-400 bg-slate-900/50 px-2 py-1 rounded">
+                          <TrendingUp size={10} />
+                          {bet.reasoning}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="mt-auto space-y-2 bg-slate-800/50 p-3 rounded-lg border border-slate-700">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={market}
+                  onChange={(e) => setMarket(e.target.value)}
+                  placeholder="Mercado"
+                  className="flex-[2] bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-orange-500"
+                />
+                 <input
+                  type="number"
+                  value={odds}
+                  onChange={(e) => setOdds(e.target.value)}
+                  placeholder="Odd"
+                  className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-orange-500"
+                />
+              </div>
+              <button 
+                onClick={addBet}
+                disabled={!isValidAdd}
+                className="w-full bg-orange-600 hover:bg-orange-500 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-medium rounded-lg py-2 flex items-center justify-center gap-2 transition-colors text-sm"
+              >
+                <Plus size={16} /> Adicionar Aposta
+              </button>
+            </div>
+          </div>
+        );
+      };
+
+      // --- COMPONENT: HISTORY MODAL ---
+      const HistoryModal = ({ isOpen, onClose, history, onLoad, onDelete, onClearAll }) => {
+        const [expandedId, setExpandedId] = useState(null);
+        if (!isOpen) return null;
+
+        const toggleExpand = (id) => {
+          setExpandedId(prev => prev === id ? null : id);
+        };
+
+        return (
+          <div 
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+            onClick={onClose}
+          >
+            <div 
+              className="bg-slate-900 border border-slate-700 w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-200"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between p-6 border-b border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="bg-indigo-500/10 p-2 rounded-lg text-indigo-400">
+                    <Clock size={24} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-white">Histórico</h2>
+                    <p className="text-sm text-slate-400">Seus estudos salvos</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {history.length > 0 && (
+                      <button 
+                        onClick={onClearAll}
+                        className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-red-400 hover:text-white hover:bg-red-500/20 rounded-lg border border-red-500/20 mr-2"
+                      >
+                        <Trash2 size={14} /> Limpar
+                      </button>
+                  )}
+                  <button onClick={onClose} className="text-slate-500 hover:text-white p-2 hover:bg-slate-800 rounded-full"><X size={24} /></button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {history.length === 0 ? (
+                  <div className="text-center py-12 text-slate-500 border-2 border-dashed border-slate-800 rounded-xl m-2">
+                    <Clock size={48} className="mx-auto mb-4 opacity-20" />
+                    <p>Nenhum estudo encontrado.</p>
+                  </div>
+                ) : (
+                  history.map((item) => {
+                    const isExpanded = expandedId === item.id;
+                    return (
+                      <div key={item.id} className={`group bg-slate-800/40 border transition-all rounded-xl overflow-hidden ${isExpanded ? 'border-indigo-500/50 bg-slate-800/80' : 'border-slate-700/50 hover:bg-slate-800'}`}>
+                        <div className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                          <div className="flex items-center gap-4 w-full sm:w-auto">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold border shrink-0 ${item.session.sport === SportType.FOOTBALL ? 'bg-emerald-900/30 border-emerald-500/30 text-emerald-400' : 'bg-orange-900/30 border-orange-500/30 text-orange-400'}`}>
+                              {item.session.sport === SportType.FOOTBALL ? '⚽' : '🏀'}
+                            </div>
+                            <div className="flex-1">
+                              <h3 className="font-bold text-white text-base">
+                                {item.session.homeTeam} <span className="text-slate-500 text-sm font-normal">vs</span> {item.session.awayTeam}
+                              </h3>
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400 mt-1">
+                                <span className="flex items-center gap-1"><Trophy size={12} /> {item.session.league || 'Sem liga'}</span>
+                                <span className="flex items-center gap-1"><Calendar size={12} /> {new Date(item.savedAt).toLocaleDateString()}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 w-full sm:w-auto justify-end border-t sm:border-t-0 border-slate-700/50 pt-3 sm:pt-0">
+                            <button onClick={() => toggleExpand(item.id)} className={`p-2 rounded-lg ${isExpanded ? 'bg-indigo-500/20 text-indigo-300' : 'text-slate-400 hover:text-white'}`}>
+                              {isExpanded ? <ChevronUp size={18} /> : <Eye size={18} />}
+                            </button>
+                            <div className="w-px h-6 bg-slate-700 mx-1 hidden sm:block"></div>
+                            <button onClick={() => onLoad(item)} className="p-2 text-emerald-400 hover:bg-emerald-500/10 rounded-lg"><Upload size={18} /></button>
+                            <button onClick={() => onDelete(item.id)} className="p-2 text-slate-500 hover:bg-red-500/10 hover:text-red-400 rounded-lg"><Trash2 size={18} /></button>
+                          </div>
+                        </div>
+                        {isExpanded && (
+                          <div className="px-4 pb-4 pt-0 animate-in slide-in-from-top-2 duration-200">
+                            <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700/50 grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+                              <div>
+                                <h4 className="font-semibold text-blue-400 mb-3 flex items-center gap-2 border-b border-blue-500/20 pb-2"><Newspaper size={14}/> Notícias</h4>
+                                {item.news.length > 0 ? <ul className="space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">{item.news.map(n => <li key={n.id} className="text-slate-400 text-xs pl-2 border-l-2 border-slate-700">{n.text}</li>)}</ul> : <span className="text-slate-600 text-xs italic">Vazio</span>}
+                              </div>
+                              <div>
+                                <h4 className="font-semibold text-orange-400 mb-3 flex items-center gap-2 border-b border-orange-500/20 pb-2"><Target size={14}/> Picks</h4>
+                                {item.bets.length > 0 ? <ul className="space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">{item.bets.map(b => <li key={b.id} className="bg-slate-900 border border-slate-800 p-2 rounded flex justify-between items-center text-xs"><span className="text-slate-300">{b.market}</span><span className="bg-emerald-500/20 text-emerald-400 px-1.5 rounded">{b.odds.toFixed(2)}</span></li>)}</ul> : <span className="text-slate-600 text-xs italic">Vazio</span>}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      // --- APP COMPONENT ---
+      function App() {
+        const DEFAULT_SESSION = {
+          sport: SportType.FOOTBALL,
+          league: '',
+          homeTeam: '',
+          awayTeam: '',
+          homeTeamLogo: '', 
+          awayTeamLogo: '', 
+          date: new Date().toISOString().substring(0, 16)
+        };
+
+        const [session, setSession] = useState(DEFAULT_SESSION);
+        const [news, setNews] = useState([]);
+        const [bets, setBets] = useState([]);
+        
+        const [isGenerating, setIsGenerating] = useState(false);
+        const [isExporting, setIsExporting] = useState(false);
+        const [showSaveToast, setShowSaveToast] = useState(false);
+        const [showArchiveToast, setShowArchiveToast] = useState(false);
+        
+        const [history, setHistory] = useState([]);
+        const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+
+        const dashboardRef = useRef(null);
+
+        useEffect(() => {
+          const savedData = localStorage.getItem('betmaster_studio_data');
+          if (savedData) {
+            try {
+              const parsed = JSON.parse(savedData);
+              if (parsed.session) setSession(parsed.session);
+              if (parsed.news) setNews(parsed.news);
+              if (parsed.bets) setBets(parsed.bets);
+            } catch (e) { console.error(e); }
+          }
+          const savedHistory = localStorage.getItem('betmaster_history');
+          if (savedHistory) {
+            try { setHistory(JSON.parse(savedHistory)); } catch (e) { console.error(e); }
+          }
+        }, []);
+
+        useEffect(() => {
+          const handleBeforeUnload = () => {
+            const dataToSave = { session, news, bets };
+            localStorage.setItem('betmaster_studio_data', JSON.stringify(dataToSave));
+          };
+          window.addEventListener('beforeunload', handleBeforeUnload);
+          return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+        }, [session, news, bets]);
+
+        useEffect(() => {
+          localStorage.setItem('betmaster_history', JSON.stringify(history));
+        }, [history]);
+
+        const handleSaveDraft = () => {
+          const dataToSave = { session, news, bets };
+          localStorage.setItem('betmaster_studio_data', JSON.stringify(dataToSave));
+          setShowSaveToast(true);
+          setTimeout(() => setShowSaveToast(false), 2000);
+        };
+
+        const handleArchive = () => {
+          if (!session.homeTeam || !session.awayTeam) {
+            alert("Preencha pelo menos os times para arquivar.");
+            return;
+          }
+          const newEntry = {
+            id: Date.now().toString(),
+            savedAt: Date.now(),
+            session: { ...session },
+            news: [...news],
+            bets: [...bets]
+          };
+          setHistory(prev => [newEntry, ...prev]);
+          setShowArchiveToast(true);
+          setTimeout(() => setShowArchiveToast(false), 2000);
+        };
+
+        const handleExportImage = async () => {
+          if (!dashboardRef.current) return;
+          setIsExporting(true);
+          const element = dashboardRef.current;
+          const originalHeight = element.style.height;
+          const originalOverflow = element.style.overflow;
+          
+          try {
+            element.style.height = 'auto';
+            element.style.overflow = 'visible';
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            const canvas = await html2canvas(element, {
+              backgroundColor: '#0f172a',
+              scale: 2,
+              logging: false,
+              useCORS: true, 
+              allowTaint: false, 
+              foreignObjectRendering: false, 
+              windowHeight: element.scrollHeight + 100
+            });
+
+            const image = canvas.toDataURL("image/png");
+            const link = document.createElement('a');
+            const filename = `BetMaster-${session.homeTeam || 'Jogo'}-vs-${session.awayTeam || 'Jogo'}.png`;
+            link.download = filename;
+            link.href = image;
+            link.click();
+          } catch (error) {
+            console.error(error);
+            alert("Erro ao gerar imagem.");
+          } finally {
+            element.style.height = originalHeight;
+            element.style.overflow = originalOverflow;
+            setIsExporting(false);
+          }
+        };
+
+        const handleLoadHistory = (item) => {
+          if (window.confirm("Carregar este estudo substituirá os dados atuais da tela. Continuar?")) {
+            setSession(item.session);
+            setNews(item.news);
+            setBets(item.bets);
+            setIsHistoryOpen(false);
+          }
+        };
+
+        const handleDeleteHistory = (id) => {
+          if (window.confirm("Excluir este estudo do histórico?")) {
+            setHistory(prev => prev.filter(item => item.id !== id));
+          }
+        };
+
+        const handleClearAllHistory = () => {
+          if (window.confirm("Isso apagará TODO o histórico. Continuar?")) {
+            setHistory([]);
+            localStorage.removeItem('betmaster_history');
+          }
+        };
+
+        const handleClear = () => {
+          if (window.confirm("Iniciar novo estudo? Dados atuais serão limpos.")) {
+            setSession(DEFAULT_SESSION);
+            setNews([]);
+            setBets([]);
+            localStorage.removeItem('betmaster_studio_data');
+          }
+        };
+
+        const handleAutoGenerate = async () => {
+          if (!session.homeTeam || !session.awayTeam) return;
+          setIsGenerating(true);
+          try {
+            const data = await generateStudyData(session.sport, session.homeTeam, session.awayTeam, session.league);
+            if (data) {
+              setSession(prev => ({
+                ...prev,
+                homeTeamLogo: data.homeTeamLogo || prev.homeTeamLogo,
+                awayTeamLogo: data.awayTeamLogo || prev.awayTeamLogo
+              }));
+              if (data.news && Array.isArray(data.news)) {
+                setNews(prev => [...prev, ...data.news.map(text => ({ id: Date.now().toString() + Math.random(), text, isAiGenerated: true }))]);
+              }
+              if (data.bets && Array.isArray(data.bets)) {
+                setBets(prev => [...prev, ...data.bets.map(bet => ({ id: Date.now().toString() + Math.random(), market: bet.market, odds: bet.odds, reasoning: bet.reasoning }))]);
+              }
+            }
+          } catch (error) {
+            alert("Erro na IA. Verifique a chave ou tente novamente.");
+          } finally {
+            setIsGenerating(false);
+          }
+        };
+
+        return (
+          <div className="min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-emerald-500/30 selection:text-emerald-200 flex flex-col">
+            <HistoryModal 
+              isOpen={isHistoryOpen}
+              onClose={() => setIsHistoryOpen(false)}
+              history={history}
+              onLoad={handleLoadHistory}
+              onDelete={handleDeleteHistory}
+              onClearAll={handleClearAllHistory}
+            />
+
+            <header className="bg-slate-900 border-b border-slate-800 py-3 px-4 md:px-6 shadow-md z-10">
+              <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row items-center justify-between gap-4 md:gap-0">
+                <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-start">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-emerald-500/10 p-2 rounded-lg border border-emerald-500/20">
+                       <Layout className="text-emerald-500" size={24} />
+                    </div>
+                    <div>
+                      <h1 className="text-xl font-bold text-white tracking-tight leading-none">BetMaster <span className="text-emerald-400">Studio</span></h1>
+                      <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Mesa de Estudo Esportivo</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setIsHistoryOpen(true)} className="md:hidden text-slate-400 hover:text-white p-2"><History size={24} /></button>
+                </div>
+
+                <div className="flex items-center gap-2 md:gap-3 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
+                   <div className={`hidden md:flex items-center gap-2 text-emerald-400 text-sm font-medium transition-opacity duration-300 ${showSaveToast ? 'opacity-100' : 'opacity-0'}`}><CheckCircle size={16} /><span>Salvo</span></div>
+                   <div className={`hidden md:flex items-center gap-2 text-indigo-400 text-sm font-medium transition-opacity duration-300 ${showArchiveToast ? 'opacity-100' : 'opacity-0'}`}><Archive size={16} /><span>Arquivado</span></div>
+                   <div className="h-8 w-px bg-slate-700 mx-2 hidden md:block"></div>
+                   <button onClick={handleExportImage} disabled={isExporting} className="flex items-center gap-2 px-3 py-2 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-all text-sm font-medium whitespace-nowrap disabled:opacity-50">{isExporting ? <span className="animate-spin">⌛</span> : <ImageIcon size={18} />}<span className="hidden sm:inline">Imagem</span></button>
+                   <button onClick={() => setIsHistoryOpen(true)} className="flex items-center gap-2 px-3 py-2 text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-all text-sm font-medium whitespace-nowrap"><History size={18} /><span className="hidden sm:inline">Histórico</span></button>
+                   <button onClick={handleClear} className="flex items-center gap-2 px-3 py-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all text-sm font-medium whitespace-nowrap"><RotateCcw size={18} /><span className="hidden sm:inline">Limpar</span></button>
+                   <button onClick={handleSaveDraft} className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white rounded-lg transition-all text-sm font-medium shadow-sm whitespace-nowrap"><Save size={18} className="text-blue-400" /><span className="hidden lg:inline">Salvar</span></button>
+                   <button onClick={handleArchive} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white rounded-lg transition-all text-sm font-medium shadow-lg shadow-indigo-900/30 whitespace-nowrap"><Archive size={18} /><span className="hidden lg:inline">Arquivar</span></button>
+                </div>
+              </div>
+            </header>
+
+            <main className="flex-1 p-4 md:p-6 overflow-hidden">
+              <div className="max-w-[1600px] mx-auto h-[calc(100vh-140px)] min-h-[600px]">
+                <div ref={dashboardRef} className="grid grid-cols-1 md:grid-cols-10 gap-6 h-full overflow-y-auto md:overflow-visible pb-10 md:pb-0 bg-slate-950">
+                  <div className="md:col-span-3 h-auto md:h-full"><MatchPanel session={session} setSession={setSession} onAutoGenerate={handleAutoGenerate} isGenerating={isGenerating} /></div>
+                  <div className="md:col-span-4 h-auto md:h-full"><NewsPanel news={news} setNews={setNews} /></div>
+                  <div className="md:col-span-3 h-auto md:h-full"><BetsPanel bets={bets} setBets={setBets} /></div>
+                </div>
+              </div>
+            </main>
+          </div>
+        );
+      }
+
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(
+        <React.StrictMode>
+          <App />
+        </React.StrictMode>
+      );
+    </script>
   </body>
 </html>
