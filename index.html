@@ -79,7 +79,8 @@
         Image as ImageIcon, Download, Trophy, Calendar, Sparkles, 
         Eraser, ImagePlus, Shield, Clock, Newspaper, Plus, 
         Trash2, Globe, Share2, Check, Target, TrendingUp, 
-        Pencil, X, Upload, Eye, ChevronUp, ChevronDown 
+        Pencil, X, Upload, Eye, ChevronUp, ChevronDown, 
+        XCircle, ThumbsUp, ThumbsDown
       } from 'lucide-react';
       import html2canvas from 'html2canvas';
       import { GoogleGenAI } from "@google/genai";
@@ -91,7 +92,7 @@
       };
 
       // --- SERVICE: GEMINI ---
-      const ai = new GoogleGenAI({ apiKey: "AIzaSyAhlg80uDSuxNpWGCjaodfet-fTsMd9PGc" });
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
       const generateStudyData = async (sport, homeTeam, awayTeam, league) => {
         try {
@@ -102,14 +103,11 @@
             
             TAREFAS:
             1. Use o Google Search para encontrar notícias de última hora (lesões, suspensões, declarações, momento dos times) de HOJE ou ONTEM.
-            2. Tente encontrar a URL de uma imagem (logo/escudo) PNG transparente ou JPG para o ${homeTeam} e para o ${awayTeam}. Preferência por links da Wikimedia ou sites oficiais estáveis.
-            3. Sugira 2 a 3 mercados com valor esperado positivo baseados na forma recente e nas notícias encontradas.
+            2. Sugira 2 a 3 mercados com valor esperado positivo baseados na forma recente e nas notícias encontradas.
 
             FORMATO DE RESPOSTA OBRIGATÓRIO:
             Retorne sua resposta APENAS como um JSON válido, sem blocos de código markdown (como \`\`\`json), seguindo estritamente esta estrutura:
             {
-              "homeTeamLogo": "URL encontrada ou null",
-              "awayTeamLogo": "URL encontrada ou null",
               "news": [
                 "Fato relevante encontrado na busca 1",
                 "Fato relevante encontrado na busca 2"
@@ -155,50 +153,6 @@
         }
       };
 
-      // --- COMPONENT: TEAM LOGO AVATAR ---
-      const TeamLogoAvatar = ({ name, url, onChangeUrl }) => {
-        const [imgError, setImgError] = useState(false);
-
-        const handlePrompt = () => {
-          const newUrl = prompt(`Insira a URL do logo para ${name || 'o time'}:`, url || '');
-          if (newUrl !== null) {
-            onChangeUrl(newUrl);
-            setImgError(false);
-          }
-        };
-
-        const initials = name
-          ? name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
-          : '?';
-
-        return (
-          <div 
-            onClick={handlePrompt}
-            className="relative group cursor-pointer flex-shrink-0"
-            title="Clique para alterar o logo"
-          >
-            <div className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-slate-800 border-2 border-slate-600 flex items-center justify-center overflow-hidden transition-all group-hover:border-emerald-500 shadow-lg">
-              {url && !imgError ? (
-                <img 
-                  src={url} 
-                  alt={name} 
-                  className="w-full h-full object-cover" 
-                  onError={() => setImgError(true)}
-                  crossOrigin="anonymous" 
-                />
-              ) : (
-                <span className="text-xl md:text-2xl font-bold text-slate-500 group-hover:text-emerald-500 transition-colors">
-                  {initials}
-                </span>
-              )}
-            </div>
-            <div className="absolute -bottom-1 -right-1 bg-slate-700 p-1 rounded-full border border-slate-600 group-hover:bg-emerald-500 group-hover:text-white transition-colors">
-              {url && !imgError ? <Shield size={12} /> : <ImagePlus size={12} />}
-            </div>
-          </div>
-        );
-      };
-
       // --- COMPONENT: MATCH PANEL ---
       const MatchPanel = ({ session, setSession, onAutoGenerate, isGenerating }) => {
         const handleChange = (field, value) => {
@@ -222,9 +176,7 @@
                     ...prev, 
                     league: '', 
                     homeTeam: '', 
-                    awayTeam: '',
-                    homeTeamLogo: '',
-                    awayTeamLogo: '' 
+                    awayTeam: ''
                   }));
               }
           }
@@ -289,11 +241,6 @@
               <div className="flex flex-col gap-4">
                 <label className="text-xs text-slate-500 font-medium uppercase ml-1 -mb-2">Confronto</label>
                 <div className="flex items-center gap-3">
-                  <TeamLogoAvatar 
-                    name={session.homeTeam} 
-                    url={session.homeTeamLogo} 
-                    onChangeUrl={(url) => handleChange('homeTeamLogo', url)}
-                  />
                   <div className="flex-1">
                     <input
                       type="text"
@@ -309,7 +256,7 @@
                   <span className="text-xs font-bold text-slate-500">VS</span>
                 </div>
 
-                <div className="flex items-center gap-3 flex-row-reverse md:flex-row">
+                <div className="flex items-center gap-3">
                   <div className="flex-1">
                     <input
                       type="text"
@@ -319,11 +266,6 @@
                       className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-all font-semibold text-lg text-right md:text-left"
                     />
                   </div>
-                  <TeamLogoAvatar 
-                    name={session.awayTeam} 
-                    url={session.awayTeamLogo} 
-                    onChangeUrl={(url) => handleChange('awayTeamLogo', url)}
-                  />
                 </div>
               </div>
 
@@ -366,7 +308,7 @@
                   {isGenerating ? (
                     <>
                       <div className="animate-spin h-5 w-5 border-2 border-white/30 border-t-white rounded-full"></div>
-                      <span>Analisando e Buscando Logos...</span>
+                      <span>Analisando...</span>
                     </>
                   ) : (
                     <>
@@ -498,7 +440,8 @@
             id: Date.now().toString(), 
             market, 
             odds: parseFloat(odds),
-            reasoning: 'Adicionado manualmente'
+            reasoning: 'Adicionado manualmente',
+            status: 'pending' // Initialize status
           }]);
           setMarket('');
           setOdds('');
@@ -532,6 +475,13 @@
           setEditingId(null);
         };
 
+        // Nova função para alterar status da aposta
+        const handleStatusChange = (id, newStatus) => {
+            setBets(prev => prev.map(bet => 
+                bet.id === id ? { ...bet, status: bet.status === newStatus ? 'pending' : newStatus } : bet
+            ));
+        };
+
         const isValidAdd = market.trim() && odds;
 
         return (
@@ -562,6 +512,14 @@
               ) : (
                 bets.map((bet) => {
                   const isEditing = editingId === bet.id;
+                  const isWon = bet.status === 'won';
+                  const isLost = bet.status === 'lost';
+
+                  // Estilos Dinâmicos baseados no status
+                  let containerClasses = "group bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-orange-500/30 rounded-lg p-3 transition-all flex flex-col gap-2";
+                  if (isWon) containerClasses = "group bg-emerald-900/20 border border-emerald-500/50 rounded-lg p-3 transition-all flex flex-col gap-2";
+                  if (isLost) containerClasses = "group bg-red-900/20 border border-red-500/50 rounded-lg p-3 transition-all flex flex-col gap-2 opacity-75";
+
                   if (isEditing) {
                     return (
                       <div key={bet.id} className="bg-slate-800 border border-orange-500/50 rounded-lg p-3 flex flex-col gap-2 shadow-lg shadow-orange-900/10">
@@ -596,15 +554,42 @@
                     );
                   }
                   return (
-                    <div key={bet.id} className="group bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-orange-500/30 rounded-lg p-3 transition-all flex flex-col gap-2">
+                    <div key={bet.id} className={containerClasses}>
                       <div className="flex justify-between items-start">
                         <div>
-                           <h3 className="text-emerald-400 font-bold text-lg">{bet.odds.toFixed(2)}</h3>
-                           <p className="text-white font-medium text-sm">{bet.market}</p>
+                           <div className="flex items-center gap-2">
+                                <h3 className={`font-bold text-lg ${isWon ? 'text-emerald-400' : isLost ? 'text-red-400' : 'text-emerald-400'}`}>
+                                    {bet.odds.toFixed(2)}
+                                </h3>
+                                {isWon && <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded uppercase font-bold tracking-wide">Green</span>}
+                                {isLost && <span className="text-[10px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded uppercase font-bold tracking-wide">Red</span>}
+                           </div>
+                           <p className={`font-medium text-sm ${isLost ? 'text-slate-400 line-through' : 'text-white'}`}>{bet.market}</p>
                         </div>
-                        <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => startEditing(bet)} className="p-1.5 text-slate-500 hover:text-blue-400"><Pencil size={14} /></button>
-                          <button onClick={() => removeBet(bet.id)} className="p-1.5 text-slate-500 hover:text-red-400"><Trash2 size={14} /></button>
+                        
+                        <div className="flex items-center gap-1">
+                            {/* Botões de Status: Sempre visíveis ou visíveis no hover */}
+                            <div className="flex bg-slate-900/50 rounded-lg p-0.5 mr-2">
+                                <button 
+                                    onClick={() => handleStatusChange(bet.id, 'won')} 
+                                    className={`p-1.5 rounded-md transition-all ${isWon ? 'bg-emerald-500 text-white shadow-lg' : 'text-slate-500 hover:text-emerald-400 hover:bg-slate-800'}`}
+                                    title="Green (Acerto)"
+                                >
+                                    <CheckCircle size={14} />
+                                </button>
+                                <button 
+                                    onClick={() => handleStatusChange(bet.id, 'lost')} 
+                                    className={`p-1.5 rounded-md transition-all ${isLost ? 'bg-red-500 text-white shadow-lg' : 'text-slate-500 hover:text-red-400 hover:bg-slate-800'}`}
+                                    title="Red (Erro)"
+                                >
+                                    <XCircle size={14} />
+                                </button>
+                            </div>
+
+                            <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                                <button onClick={() => startEditing(bet)} className="p-1.5 text-slate-500 hover:text-blue-400"><Pencil size={14} /></button>
+                                <button onClick={() => removeBet(bet.id)} className="p-1.5 text-slate-500 hover:text-red-400"><Trash2 size={14} /></button>
+                            </div>
                         </div>
                       </div>
                       {bet.reasoning && (
@@ -733,7 +718,13 @@
                               </div>
                               <div>
                                 <h4 className="font-semibold text-orange-400 mb-3 flex items-center gap-2 border-b border-orange-500/20 pb-2"><Target size={14}/> Picks</h4>
-                                {item.bets.length > 0 ? <ul className="space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">{item.bets.map(b => <li key={b.id} className="bg-slate-900 border border-slate-800 p-2 rounded flex justify-between items-center text-xs"><span className="text-slate-300">{b.market}</span><span className="bg-emerald-500/20 text-emerald-400 px-1.5 rounded">{b.odds.toFixed(2)}</span></li>)}</ul> : <span className="text-slate-600 text-xs italic">Vazio</span>}
+                                {item.bets.length > 0 ? <ul className="space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">{item.bets.map(b => <li key={b.id} className="bg-slate-900 border border-slate-800 p-2 rounded flex justify-between items-center text-xs">
+                                  <div className="flex flex-col">
+                                    <span className={`font-medium ${b.status === 'won' ? 'text-emerald-400' : b.status === 'lost' ? 'text-red-400 line-through' : 'text-slate-300'}`}>{b.market}</span>
+                                    {b.status === 'won' && <span className="text-[9px] text-emerald-500 uppercase font-bold">Green</span>}
+                                  </div>
+                                  <span className="bg-emerald-500/20 text-emerald-400 px-1.5 rounded">{b.odds.toFixed(2)}</span>
+                                </li>)}</ul> : <span className="text-slate-600 text-xs italic">Vazio</span>}
                               </div>
                             </div>
                           </div>
@@ -755,8 +746,6 @@
           league: '',
           homeTeam: '',
           awayTeam: '',
-          homeTeamLogo: '', 
-          awayTeamLogo: '', 
           date: new Date().toISOString().substring(0, 16)
         };
 
@@ -902,16 +891,18 @@
           try {
             const data = await generateStudyData(session.sport, session.homeTeam, session.awayTeam, session.league);
             if (data) {
-              setSession(prev => ({
-                ...prev,
-                homeTeamLogo: data.homeTeamLogo || prev.homeTeamLogo,
-                awayTeamLogo: data.awayTeamLogo || prev.awayTeamLogo
-              }));
+              // Logos removed from logic
               if (data.news && Array.isArray(data.news)) {
                 setNews(prev => [...prev, ...data.news.map(text => ({ id: Date.now().toString() + Math.random(), text, isAiGenerated: true }))]);
               }
               if (data.bets && Array.isArray(data.bets)) {
-                setBets(prev => [...prev, ...data.bets.map(bet => ({ id: Date.now().toString() + Math.random(), market: bet.market, odds: bet.odds, reasoning: bet.reasoning }))]);
+                setBets(prev => [...prev, ...data.bets.map(bet => ({ 
+                  id: Date.now().toString() + Math.random(), 
+                  market: bet.market, 
+                  odds: bet.odds, 
+                  reasoning: bet.reasoning,
+                  status: 'pending' // Initialize default status
+                }))]);
               }
             }
           } catch (error) {
